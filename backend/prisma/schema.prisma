@@ -1,0 +1,176 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum PlaygroundStatus {
+  ACTIVE
+  LOCKED
+  ARCHIVED
+}
+
+enum PlaygroundVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  username      String   @unique
+  password      String
+  displayName   String   @map("display_name")
+  avatar        String?
+  role          Role     @default(USER)
+  isActive      Boolean  @default(true) @map("is_active")
+  lastSeenAt    DateTime? @map("last_seen_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  votes         ItemVote[]
+  sessions      RealtimeSession[]
+  activities    Activity[]
+
+  @@map("users")
+}
+
+model Playground {
+  id            String               @id @default(uuid())
+  title         String
+  description   String?
+  slug          String               @unique
+  coverImage    String?              @map("cover_image")
+  status        PlaygroundStatus     @default(ACTIVE)
+  visibility    PlaygroundVisibility @default(PUBLIC)
+  inviteCode    String?              @unique @map("invite_code")
+  maxParticipants Int?               @map("max_participants")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+
+  tiers         Tier[]
+  items         Item[]
+  sessions      RealtimeSession[]
+  activities    Activity[]
+  analytics     PlaygroundAnalytics?
+
+  @@index([slug])
+  @@index([status, visibility])
+  @@map("playgrounds")
+}
+
+model Tier {
+  id            String     @id @default(uuid())
+  name          String
+  label         String
+  color         String
+  score         Int
+  orderIndex    Int        @map("order_index")
+  playgroundId  String     @map("playground_id")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  playground    Playground @relation(fields: [playgroundId], references: [id], onDelete: Cascade)
+  votes         ItemVote[]
+
+  @@unique([playgroundId, orderIndex])
+  @@index([playgroundId])
+  @@map("tiers")
+}
+
+model Item {
+  id            String     @id @default(uuid())
+  name          String
+  imageUrl      String?    @map("image_url")
+  description   String?
+  orderIndex    Int        @map("order_index")
+  playgroundId  String     @map("playground_id")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  // Aggregated scores (denormalized for performance)
+  totalVotes    Int        @default(0) @map("total_votes")
+  averageScore  Float      @default(0) @map("average_score")
+  aggregateTier String?    @map("aggregate_tier")
+
+  playground    Playground @relation(fields: [playgroundId], references: [id], onDelete: Cascade)
+  votes         ItemVote[]
+
+  @@index([playgroundId])
+  @@map("items")
+}
+
+model ItemVote {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  itemId        String   @map("item_id")
+  tierId        String   @map("tier_id")
+  score         Int
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item          Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  tier          Tier     @relation(fields: [tierId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId])
+  @@index([itemId])
+  @@index([userId])
+  @@map("item_votes")
+}
+
+model RealtimeSession {
+  id            String     @id @default(uuid())
+  userId        String     @map("user_id")
+  playgroundId  String     @map("playground_id")
+  socketId      String     @map("socket_id")
+  isActive      Boolean    @default(true) @map("is_active")
+  joinedAt      DateTime   @default(now()) @map("joined_at")
+  leftAt        DateTime?  @map("left_at")
+
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playground    Playground @relation(fields: [playgroundId], references: [id], onDelete: Cascade)
+
+  @@index([playgroundId, isActive])
+  @@index([userId])
+  @@map("realtime_sessions")
+}
+
+model Activity {
+  id            String     @id @default(uuid())
+  type          String
+  message       String
+  metadata      Json?
+  userId        String?    @map("user_id")
+  playgroundId  String?    @map("playground_id")
+  createdAt     DateTime   @default(now()) @map("created_at")
+
+  user          User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  playground    Playground? @relation(fields: [playgroundId], references: [id], onDelete: Cascade)
+
+  @@index([playgroundId, createdAt])
+  @@index([type])
+  @@map("activities")
+}
+
+model PlaygroundAnalytics {
+  id              String     @id @default(uuid())
+  playgroundId    String     @unique @map("playground_id")
+  totalViews      Int        @default(0) @map("total_views")
+  totalVotes      Int        @default(0) @map("total_votes")
+  uniqueVisitors  Int        @default(0) @map("unique_visitors")
+  peakConcurrent  Int        @default(0) @map("peak_concurrent")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  playground      Playground @relation(fields: [playgroundId], references: [id], onDelete: Cascade)
+
+  @@map("playground_analytics")
+}

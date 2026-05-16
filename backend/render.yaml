@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: tiermaker-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: oregon
+    plan: starter
+    branch: main
+    healthCheckPath: /api
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_EXPIRATION
+        value: 7d
+      - key: JWT_REFRESH_EXPIRATION
+        value: 30d
+      - key: ADMIN_EMAIL
+        value: na5893395@gmail.com
+      - key: PORT
+        value: 4000
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_URL
+        sync: false

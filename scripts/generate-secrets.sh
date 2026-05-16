@@ -1,0 +1,10 @@
+#!/bin/bash
+echo "==========================================="
+echo "  TierMaker - Generate Production Secrets"
+echo "==========================================="
+echo ""
+echo "JWT_SECRET=$(openssl rand -hex 64)"
+echo ""
+echo "JWT_REFRESH_SECRET=$(openssl rand -hex 64)"
+echo ""
+echo "Copy these into your Railway/Render environment variables."
