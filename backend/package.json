@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "TierMaker Backend - NestJS + Prisma + Socket.IO + Redis",
   "scripts": {
+    "vercel-build": "npx prisma generate && nest build",
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
