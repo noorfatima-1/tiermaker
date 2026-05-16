@@ -1,24 +1,24 @@
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, INestApplication } from '@nestjs/common';
-import { ExpressAdapter } from '@nestjs/platform-express';
-import express, { Request, Response } from 'express';
-import cookieParser from 'cookie-parser';
-import { AppModule } from '../src/app.module';
-import { HttpExceptionFilter } from '../src/modules/common/filters/http-exception.filter';
-import { TransformInterceptor } from '../src/modules/common/interceptors/transform.interceptor';
+const { NestFactory } = require('@nestjs/core');
+const { ValidationPipe } = require('@nestjs/common');
+const { ExpressAdapter } = require('@nestjs/platform-express');
+const express = require('express');
+const cookieParser = require('cookie-parser');
 
+let cachedApp;
 const expressApp = express();
-let app: INestApplication;
 
 async function bootstrap() {
-  if (app) return app;
+  if (cachedApp) return cachedApp;
 
-  app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp), {
+  const { AppModule } = require('../dist/app.module');
+  const { HttpExceptionFilter } = require('../dist/modules/common/filters/http-exception.filter');
+  const { TransformInterceptor } = require('../dist/modules/common/interceptors/transform.interceptor');
+
+  const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp), {
     logger: ['error', 'warn'],
   });
 
   app.use(cookieParser());
-
   app.enableCors({
     origin: true,
     credentials: true,
@@ -39,10 +39,11 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
 
   await app.init();
+  cachedApp = app;
   return app;
 }
 
-export default async function handler(req: Request, res: Response) {
+module.exports = async function handler(req, res) {
   await bootstrap();
   expressApp(req, res);
-}
+};

@@ -1,16 +1,19 @@
 {
   "version": 2,
+  "installCommand": "npm ci && npx prisma generate && npm run build",
   "builds": [
     {
-      "src": "api/index.ts",
-      "use": "@vercel/node"
+      "src": "api/index.js",
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["dist/**", "node_modules/.prisma/**", "node_modules/@prisma/**", "prisma/**"]
+      }
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "api/index.ts",
-      "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+      "dest": "api/index.js"
     }
   ]
 }
