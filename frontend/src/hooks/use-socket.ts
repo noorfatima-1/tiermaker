@@ -1,124 +1,90 @@
 'use client';
 
 import { useEffect, useCallback, useRef } from 'react';
-import { getSocket, disconnectSocket, SOCKET_EVENTS } from '@/lib/socket';
 import { usePlaygroundStore } from '@/store/playground-store';
 import { useAuthStore } from '@/store/auth-store';
+import { votesApi } from '@/lib/api';
 import toast from 'react-hot-toast';
 
+// Polling-based realtime (works on Vercel serverless)
 export function usePlaygroundSocket(playgroundId: string | null) {
-  const socketRef = useRef(getSocket());
+  const pollRef = useRef<NodeJS.Timeout | null>(null);
   const { isAuthenticated } = useAuthStore();
   const {
     setUserVotes,
     setAggregates,
-    setOnlineUsers,
-    setParticipantCount,
     setIsConnected,
-    setIsLocked,
-    addUserVote,
-    updateAggregate,
+    setParticipantCount,
   } = usePlaygroundStore();
 
   useEffect(() => {
     if (!playgroundId || !isAuthenticated) return;
 
-    const socket = getSocket();
-    socketRef.current = socket;
+    setIsConnected(true);
 
-    socket.on('connect', () => {
-      setIsConnected(true);
-      socket.emit(SOCKET_EVENTS.JOIN_PLAYGROUND, { playgroundId });
-    });
+    // Fetch initial data + poll every 3 seconds
+    const fetchData = async () => {
+      try {
+        const [aggRes, votesRes] = await Promise.all([
+          votesApi.getPlaygroundAggregates(playgroundId),
+          votesApi.getUserVotes(playgroundId),
+        ]);
+        setAggregates(aggRes.data?.data || aggRes.data || []);
+        setUserVotes(votesRes.data?.data || votesRes.data || []);
+      } catch {}
+    };
 
-    socket.on('disconnect', () => {
-      setIsConnected(false);
-    });
-
-    // Initial state
-    socket.on(SOCKET_EVENTS.PLAYGROUND_STATE, (data: any) => {
-      setUserVotes(data.userVotes || []);
-      setAggregates(data.aggregates || []);
-      setOnlineUsers(data.onlineUsers || []);
-      setParticipantCount(data.participantCount || 0);
-    });
-
-    // User events
-    socket.on(SOCKET_EVENTS.USER_JOINED, (data: any) => {
-      setParticipantCount(data.participantCount);
-      toast.success(`${data.username} joined`, { duration: 2000, position: 'bottom-right' });
-    });
-
-    socket.on(SOCKET_EVENTS.USER_LEFT, (data: any) => {
-      setParticipantCount(data.participantCount);
-    });
-
-    // Vote events
-    socket.on(SOCKET_EVENTS.VOTE_UPDATE, (data: any) => {
-      if (data.aggregation) {
-        updateAggregate(data.itemId, data.aggregation);
-      }
-    });
-
-    socket.on(SOCKET_EVENTS.AGGREGATES_UPDATE, (data: any) => {
-      setAggregates(data);
-    });
-
-    // Presence
-    socket.on(SOCKET_EVENTS.PRESENCE_UPDATE, (data: any) => {
-      setOnlineUsers(data.onlineUsers || []);
-      setParticipantCount(data.count || 0);
-    });
-
-    // Lock state
-    socket.on(SOCKET_EVENTS.PLAYGROUND_LOCKED, (data: any) => {
-      setIsLocked(data.locked);
-      toast(data.locked ? 'Playground locked' : 'Playground unlocked', {
-        icon: data.locked ? '🔒' : '🔓',
-      });
-    });
-
-    socket.on(SOCKET_EVENTS.VOTE_ERROR, (data: any) => {
-      toast.error(data.message);
-    });
-
-    // Connect if not connected
-    if (!socket.connected) {
-      socket.connect();
-    } else {
-      socket.emit(SOCKET_EVENTS.JOIN_PLAYGROUND, { playgroundId });
-    }
+    fetchData();
+    pollRef.current = setInterval(fetchData, 3000);
 
     return () => {
-      socket.emit(SOCKET_EVENTS.LEAVE_PLAYGROUND);
-      socket.off(SOCKET_EVENTS.PLAYGROUND_STATE);
-      socket.off(SOCKET_EVENTS.USER_JOINED);
-      socket.off(SOCKET_EVENTS.USER_LEFT);
-      socket.off(SOCKET_EVENTS.VOTE_UPDATE);
-      socket.off(SOCKET_EVENTS.AGGREGATES_UPDATE);
-      socket.off(SOCKET_EVENTS.PRESENCE_UPDATE);
-      socket.off(SOCKET_EVENTS.PLAYGROUND_LOCKED);
-      socket.off(SOCKET_EVENTS.VOTE_ERROR);
+      if (pollRef.current) clearInterval(pollRef.current);
+      setIsConnected(false);
     };
   }, [playgroundId, isAuthenticated]);
 
   const castVote = useCallback(
-    (itemId: string, tierId: string) => {
-      socketRef.current?.emit(SOCKET_EVENTS.CAST_VOTE, { itemId, tierId });
+    async (itemId: string, tierId: string) => {
+      try {
+        await votesApi.cast(itemId, tierId);
+        // Immediately fetch updated data
+        if (playgroundId) {
+          const [aggRes, votesRes] = await Promise.all([
+            votesApi.getPlaygroundAggregates(playgroundId),
+            votesApi.getUserVotes(playgroundId),
+          ]);
+          setAggregates(aggRes.data?.data || aggRes.data || []);
+          setUserVotes(votesRes.data?.data || votesRes.data || []);
+        }
+      } catch (err: any) {
+        toast.error(err.response?.data?.message || 'Failed to vote');
+      }
     },
-    [],
+    [playgroundId],
   );
 
   const removeVote = useCallback(
-    (itemId: string) => {
-      socketRef.current?.emit(SOCKET_EVENTS.REMOVE_VOTE, { itemId });
+    async (itemId: string) => {
+      try {
+        await votesApi.remove(itemId);
+        if (playgroundId) {
+          const [aggRes, votesRes] = await Promise.all([
+            votesApi.getPlaygroundAggregates(playgroundId),
+            votesApi.getUserVotes(playgroundId),
+          ]);
+          setAggregates(aggRes.data?.data || aggRes.data || []);
+          setUserVotes(votesRes.data?.data || votesRes.data || []);
+        }
+      } catch (err: any) {
+        toast.error(err.response?.data?.message || 'Failed to remove vote');
+      }
     },
-    [],
+    [playgroundId],
   );
 
   const emitDrag = useCallback(
-    (itemId: string, tierId: string, position: number) => {
-      socketRef.current?.emit(SOCKET_EVENTS.ITEM_DRAG, { itemId, tierId, position });
+    (_itemId: string, _tierId: string, _position: number) => {
+      // No-op in polling mode
     },
     [],
   );
